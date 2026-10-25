@@ -35,8 +35,6 @@ if defined _OLD_CODEPAGE (
 
 echo Installing dependencies...
 
-call npm install "%~dp0character_ai"
-
 python -m ensurepip
 python -m pip install --upgrade pip
 python -m pip install pipwin 
@@ -47,6 +45,7 @@ cd /d "%~dp0"
 python -m pip install -r "%~dp0requirements.txt"
 cls
 
+echo These must already be running: Ollama on port 11434, Voicevox on port 50021, local Whisper on port 8178, VTube Studio API on port 8001. No OpenAI key.
 python "%~dp0waifu\Src\runner.py"
 
 pause

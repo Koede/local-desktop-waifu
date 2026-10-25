@@ -36,20 +36,15 @@ def donwload(url, temp):
     
     print(Fore.YELLOW + "Unzipping..." + Fore.RESET, end="", flush=True)
 
-# Checks if voicevox is intalled, if not, download and extract it.
+# Voicevox is an external engine. Do not download it; require it to already be listening.
 def start_check(voice):
-    if not os.path.isdir(VOICEVOX_DIR) and voice == "voicevox":
-
-        print(Fore.YELLOW + "Installing voicevox..." + Fore.RESET, end="", flush=True)
-
-        donwload(VOICEVOX_DIRECT_LINK, TEMP_FILE)
-            
-        with py7zr.SevenZipFile(TEMP_FILE, 'r') as archive:
-            archive.extractall(path="./")
-            
-        # Clean
-        os.rename(HARDCODED_VOICEVOX_ARCHIVE_ROOT_FOLDER, VOICEVOX_DIR)
-        os.remove(TEMP_FILE)
+    if voice == "voicevox":
+        url = os.environ.get("VOICEVOX_URL") or "http://127.0.0.1:50021"
+        try:
+            response = requests.get(f"{url}/version", timeout=2)
+            response.raise_for_status()
+        except Exception:
+            print("Start the VOICEVOX app so the engine listens on port 50021.")
 
     elif voice == "elevenlabs":
         ffmpeg_required = ["ffmpeg.exe", "ffprobe.exe"]
@@ -62,7 +57,7 @@ def start_check(voice):
                     f.write(archive.read(f"ffmpeg-master-latest-win64-gpl/bin/{i}"))
 
 
-required_variables = ["CHARACTERAI_CHARACTER", "OPENAI_KEY", "TORCH_DEVICE", "VOICE"]
+required_variables = ["OLLAMA_MODEL", "OLLAMA_URL", "VOICEVOX_URL", "WHISPER_URL", "VOICE"]
 
 # Check variables
 for i in required_variables:

@@ -1,5 +1,5 @@
 from colorama import *
-import openai, humanize, os, sys, time, threading, asyncio, signal, json
+import humanize, os, sys, time, threading, asyncio, signal, json
 from rich.console import Console
 
 # If user didn't rename example.env
@@ -15,12 +15,6 @@ with open('.env') as f:
         key, value = line.split('=', 1)
         os.environ[key] = value
 
-
-# Set OpenAPI Key
-if os.environ.get("OPENAI_KEY") is None:
-    print(Fore.RED + Style.BRIGHT + "You didn't provide an OpenAI API Key!" + Style.RESET_ALL + " Things will not work.")
-else:
-    openai.api_key = os.environ.get("OPENAI_KEY")
 
 # Check virtual env
 print(Style.BRIGHT + Fore.GREEN)
@@ -42,31 +36,36 @@ def signal_handler(sig, frame):
 
 signal.signal(signal.SIGINT, signal_handler)
 
+if os.environ.get("VOICE") != "voicevox":
+    print(Fore.YELLOW + "ElevenLabs is disabled. Using voicevox." + Fore.RESET)
+    os.environ["VOICE"] = "voicevox"
+
 import utils.dependencies # Checks variables
 import utils.audio
 import utils.hotkeys
 import utils.transcriber
-import utils.characterAi
+import utils.ollama_chat
 import utils.vtube_studio
 import utils.translator
 import utils.speech
 import utils.punctuation_fixer
 
-voice = os.environ.get("VOICE") 
+voice = os.environ.get("VOICE")
 
 utils.dependencies.start_check(voice)
 
-if voice == "elevenlabs":
-    import utils.elevenlabs
-elif voice == "voicevox":
+if voice == "voicevox":
     import utils.voicevox
     utils.voicevox.run_async()
 
 from rich.markdown import Markdown
 
-utils.speech.prepare()
-utils.characterAi.run_async()
-utils.speech.silero_tts("hello", "en", "v3_en", "en_21")
+tts_en = json.loads(os.environ.get("TTS_EN", "False").lower())
+if tts_en:
+    utils.speech.prepare()
+    utils.speech.silero_tts("hello", "en", "v3_en", "en_21")
+
+utils.ollama_chat.run_async()
 
 # wtf
 if json.loads(os.environ.get("VTUBE_STUDIO_ENABLED", "False").lower()):
@@ -92,18 +91,16 @@ def character_replied(raw_message):
     # Sometimes causes issues.
     console.print(Markdown(raw_message))
 
-    # print(raw_message)
-
-    if voice == "elevenlabs":
-        utils.elevenlabs.speak(voice_message)
-    elif voice == "voicevox":
+    if voice == "voicevox":
         if json.loads(os.environ.get("TRANSLATE_TO_JP", "False").lower()):
             message_jp = utils.translator.translate_to_jp(voice_message)
             print(f"{Style.NORMAL + Fore.RED}jp translation {Style.RESET_ALL}> {message_jp}")
             if json.loads(os.environ.get("TTS_JP", "False").lower()):
                 utils.transcriber.speak_jp(message_jp)
+        elif json.loads(os.environ.get("TTS_JP", "False").lower()):
+            utils.transcriber.speak_jp(voice_message)
 
-        if json.loads(os.environ.get("TTS_EN", "False").lower()):
+        if tts_en:
             audio_path = utils.speech.silero_tts(voice_message)
             utils.audio.play_wav(audio_path, utils.vtube_studio.set_audio_level)
 
@@ -112,7 +109,6 @@ def character_replied(raw_message):
 
     semaphore.release()
 
-utils.characterAi.reply_callback = character_replied
 # Main process loop
 while True: 
 
@@ -137,6 +133,9 @@ while True:
         print(Fore.RED + Style.BRIGHT + "Error: " + str(e))
         continue
 
+    if transcript is None or not str(transcript).strip():
+        print("\n" + Fore.YELLOW + "(heard nothing)" + Fore.RESET)
+        continue
 
     # Clear the last line.
     print('\r' + ' ' * len(tanscribing_log), end="")
@@ -144,7 +143,17 @@ while True:
 
     print(f"{transcript.strip()}")    
 
-    utils.characterAi.send_message_to_process_via_websocket(transcript)
+    replied = {"ok": False}
+
+    def _on_reply(raw_message):
+        replied["ok"] = True
+        character_replied(raw_message)
+
+    utils.ollama_chat.reply_callback = _on_reply
+    utils.ollama_chat.send_message(transcript)
+    if not replied["ok"]:
+        print(Fore.RED + "Ollama did not reply." + Fore.RESET)
+        continue
     semaphore.acquire()
 
     # After use delete recording.
